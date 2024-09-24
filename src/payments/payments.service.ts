@@ -14,7 +14,7 @@ export class PaymentsService {
 
   async createPaymentSession(paymentSessionDto: PaymentSessionDto) {
 
-    const { currency, items } = paymentSessionDto;
+    const { currency, items, orderId } = paymentSessionDto;
 
     const lineItems = items.map(item => {
       return {
@@ -32,13 +32,15 @@ export class PaymentsService {
     const session = await this.stripe.checkout.sessions.create({
       // Colocar aquí el id de mi orden
       payment_intent_data: {
-        metadata: {}
+        metadata: {
+          orderId: orderId
+        }
       },
 
       line_items: lineItems,
       mode: 'payment',
-      success_url: 'http://localhost:3003/payments/success',
-      cancel_url: 'http://localhost:3003/payments/cancel'
+      success_url: envs.tripeSuccessUrl,
+      cancel_url: envs.stripeCancelUrl
     });
 
     return session;
@@ -47,11 +49,8 @@ export class PaymentsService {
   async stripeWebhook(req: Request, res: Response) {
     const sig = req.headers['stripe-signature'];
     let event: Stripe.Event;
-    // Secrect of test
-    // const endpointSecret = "whsec_ea106a64c32fc18e1558ff954aaa3cda591ef24ee35f2f690c4a60ab449602c9";
-
-    // Secrect real
-    const endpointSecret = "whsec_bZnnVt4ud8Y9lyi0z864LMBynbth0vfc";
+ 
+    const endpointSecret = envs.stripeEndpointSecret;
     try {
       event = this.stripe.webhooks.constructEvent(
         req['rawBody'],
@@ -62,20 +61,21 @@ export class PaymentsService {
       res.status(400).send(`Webhook Error: ${err.message}`);
       return;
     }
-
-    console.log({ event });
     
     switch (event.type) {
       case 'charge.succeeded':
-        // TODO: llamar nuestro microservicio
-        console.log(event);
+        const chargeSucceeded = event.data.object;
+        console.log({
+          metadata: chargeSucceeded.metadata,
+          orderIde: chargeSucceeded.metadata.orderId
+        });
       break;
 
       default:
         console.log(`Event ${event.type} not handled`);
-
-        return res.status(200).json({ sig });
     }
+
+    return res.status(200).json({ sig });
 
   }
 }
